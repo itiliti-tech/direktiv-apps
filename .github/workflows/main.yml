@@ -44,6 +44,19 @@ jobs:
           git remote add upstream "https://github.com/${{ steps.upstream.outputs.parent_full_name }}.git"
           git fetch upstream --prune
 
+      - name: Check if upstream has changes
+        id: changes
+        run: |
+          upstream_branch="${{ steps.upstream.outputs.parent_default_branch }}"
+          LOCAL_BEFORE="$(git rev-parse HEAD)"
+          UPSTREAM_HEAD="$(git rev-parse "upstream/${upstream_branch}")"
+
+          if [ "$LOCAL_BEFORE" = "$UPSTREAM_HEAD" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Fast-forward local branch from upstream default branch
         run: |
           # Sync *your current checked-out branch* (typically your fork's default branch)
@@ -53,3 +66,62 @@ jobs:
       - name: Push updated branch back to fork
         run: |
           git push
+
+      - name: Notify Microsoft Teams (success - changes applied or manual trigger)
+        if: success() && (steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          payload=$(cat << 'EOF'
+          {
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "summary": "Upstream sync succeeded",
+            "themeColor": "2EB886",
+            "title": "Upstream sync succeeded",
+            "sections": [
+              {
+                "activityTitle": "${{ github.repository }}",
+                "activitySubtitle": "Synced from upstream: ${{ steps.upstream.outputs.parent_full_name }} (${{ steps.upstream.outputs.parent_default_branch }})",
+                "facts": [
+                  { "name": "Actor", "value": "${{ github.actor }}" },
+                  { "name": "Event", "value": "${{ github.event_name }}" },
+                  { "name": "Run", "value": "[View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" },
+                  { "name": "Changes Applied", "value": "${{ steps.changes.outputs.changed }}" }
+                ],
+                "text": "The fork's default branch was synced. On manual runs, this message is sent even if there were no upstream changes."
+              }
+            ]
+          }
+          EOF
+          )
+          curl -H 'Content-Type: application/json' -d "$payload" "$TEAMS_WEBHOOK_URL"
+
+      - name: Notify Microsoft Teams (failure)
+        if: failure()
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          payload=$(cat << 'EOF'
+          {
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "summary": "Upstream sync failed",
+            "themeColor": "E81123",
+            "title": "Upstream sync failed",
+            "sections": [
+              {
+                "activityTitle": "${{ github.repository }}",
+                "activitySubtitle": "Upstream: ${{ steps.upstream.outputs.parent_full_name }} (${{ steps.upstream.outputs.parent_default_branch }})",
+                "facts": [
+                  { "name": "Actor", "value": "${{ github.actor }}" },
+                  { "name": "Event", "value": "${{ github.event_name }}" },
+                  { "name": "Run", "value": "[View run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" }
+                ],
+                "text": "The scheduled/dispatch sync encountered an error. Check the workflow logs for details."
+              }
+            ]
+          }
+          EOF
+          )
+          curl -H 'Content-Type: application/json' -d "$payload" "$TEAMS_WEBHOOK_URL"
