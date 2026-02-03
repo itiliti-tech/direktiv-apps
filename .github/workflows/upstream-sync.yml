@@ -67,39 +67,22 @@ jobs:
         run: |
           git push
 
-      - name: Notify Microsoft Teams (success - changes applied or manual trigger)
+      - name: Success Notification
         if: success() && (steps.changes.outputs.changed == 'true' || github.event_name == 'workflow_dispatch')
         uses: mikesprague/teams-incoming-webhook-action@v1
         with:
           github-token: ${{ github.token }}
-          webhook-url: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          title: Upstream sync succeeded
-          color: success
-          message: |
-            **${{ github.repository }}**
-            Synced from upstream: ${{ steps.upstream.outputs.parent_full_name }} (${{ steps.upstream.outputs.parent_default_branch }})
+          webhook-url: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+          deploy-card: true
+          title: 'Upstream Sync Successful'
+          color: 'success'
 
-            **Actor:** ${{ github.actor }}
-            **Event:** ${{ github.event_name }}
-            **Changes Applied:** ${{ steps.changes.outputs.changed }}
-            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            The fork's default branch was synced. On manual runs, this message is sent even if there were no upstream changes.
-
-      - name: Notify Microsoft Teams (failure)
-        if: failure()
+      - name: Failure Notification
+        if: ${{ failure() }}
         uses: mikesprague/teams-incoming-webhook-action@v1
         with:
           github-token: ${{ github.token }}
-          webhook-url: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          title: Upstream sync failed
-          color: failure
-          message: |
-            **${{ github.repository }}**
-            Upstream: ${{ steps.upstream.outputs.parent_full_name }} (${{ steps.upstream.outputs.parent_default_branch }})
-
-            **Actor:** ${{ github.actor }}
-            **Event:** ${{ github.event_name }}
-            **Run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-            The scheduled/dispatch sync encountered an error. Check the workflow logs for details.
+          webhook-url: ${{ secrets.MS_TEAMS_WEBHOOK_URL }}
+          deploy-card: true
+          title: 'Upstream Sync Failed'
+          color: 'failure'
