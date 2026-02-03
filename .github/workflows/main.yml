@@ -1,0 +1,55 @@
+name: Weekly sync from upstream (auto-detect)
+
+on:
+  schedule:
+    - cron: "0 3 * * 6" # Saturday 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Detect upstream repo + default branch
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Get parent repo and its default branch (master/main/etc.)
+          parent_full_name=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.parent.full_name')
+          parent_default_branch=$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.parent.default_branch')
+
+          if [ -z "$parent_full_name" ] || [ "$parent_full_name" = "null" ]; then
+            echo "This repository does not appear to be a fork (no parent found)."
+            exit 1
+          fi
+
+          echo "parent_full_name=$parent_full_name" >> "$GITHUB_OUTPUT"
+          echo "parent_default_branch=$parent_default_branch" >> "$GITHUB_OUTPUT"
+
+      - name: Add upstream remote + fetch
+        run: |
+          git remote add upstream "https://github.com/${{ steps.upstream.outputs.parent_full_name }}.git"
+          git fetch upstream --prune
+
+      - name: Fast-forward local branch from upstream default branch
+        run: |
+          # Sync *your current checked-out branch* (typically your fork's default branch)
+          upstream_branch="${{ steps.upstream.outputs.parent_default_branch }}"
+          git merge --ff-only "upstream/${upstream_branch}"
+
+      - name: Push updated branch back to fork
+        run: |
+          git push
